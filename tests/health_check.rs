@@ -7,7 +7,7 @@ async fn health_check_test() {
     let address = spawn_app();
 
     let client = reqwest::Client::new();
- 
+
     let res = client
         .get(address)
         .send()
