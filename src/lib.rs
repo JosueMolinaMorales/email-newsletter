@@ -1,16 +1,19 @@
-use actix_web::{get, App, HttpServer, Responder};
+use std::net::TcpListener;
+
+use actix_web::{get, App, HttpServer, Responder, dev::Server};
 
 #[get("/")]
 async fn health_check() -> impl Responder {
     "Welcome to the Email Newsletter API v0.0.1-alpha!"
 }
 
-pub async fn run() -> std::io::Result<()> {
-    HttpServer::new(|| {
+pub fn run(listener: TcpListener) -> Result<Server, std::io::Error> {
+    let server = HttpServer::new(|| {
         App::new()
             .service(health_check)
     })
-    .bind(("127.0.0.1", 8080))?
-    .run()
-    .await
+    .listen(listener)?
+    .run();
+
+    Ok(server)
 }
