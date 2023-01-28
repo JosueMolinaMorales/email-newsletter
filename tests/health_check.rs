@@ -1,12 +1,35 @@
-use std::net::TcpListener;
-use email_newsletter::{startup::run, configuration::{get_configuration, DatabaseSettings}};
+use email_newsletter::{
+    configuration::{get_configuration, DatabaseSettings},
+    startup::run, telemetry::{get_subscriber, init_subscriber},
+};
+use once_cell::sync::Lazy;
 use serde_json::json;
-use sqlx::{query, PgPool, PgConnection, Connection, Executor, migrate};
+use sqlx::{migrate, query, Connection, Executor, PgConnection, PgPool};
+use std::net::TcpListener;
 use uuid::Uuid;
+
+static TRACING: Lazy<()> = Lazy::new(|| {
+    let default_filter_level = "info".to_string();
+    let subscriber_name = "test".to_string();
+
+    if std::env::var("TEST_LOG").is_ok() {
+        let subscriber = get_subscriber(
+            subscriber_name, default_filter_level, std::io::stdout
+        );
+        init_subscriber(subscriber);
+    } else {
+        let subscriber = get_subscriber(
+            subscriber_name,
+            default_filter_level,
+            std::io::sink
+        );
+        init_subscriber(subscriber);
+    }
+});
 
 pub struct TestApp {
     pub address: String,
-    pub db_pool: PgPool
+    pub db_pool: PgPool,
 }
 
 #[tokio::test]
@@ -22,14 +45,17 @@ async fn health_check_test() {
         .expect("Failted to execute request");
 
     assert!(res.status().is_success());
-    assert!(res.text().await.unwrap() == "Welcome to the Email Newsletter API v0.0.1-alpha!".to_string());
+    assert!(
+        res.text().await.unwrap()
+            == "Welcome to the Email Newsletter API v0.0.1-alpha!".to_string()
+    );
 }
 
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
     // Arrange
     let test_app = spawn_app().await;
-    
+
     // Act
     let client = reqwest::Client::new();
     let body = json!({
@@ -64,7 +90,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
     let test_cases = vec![
         json!({"email": "email@email.com"}).to_string(),
         json!({"name": "name"}).to_string(),
-        json!({}).to_string()
+        json!({}).to_string(),
     ];
     for body in test_cases {
         let res = client
@@ -74,21 +100,19 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
             .send()
             .await
             .expect("Failed to send request");
-        assert_eq!(
-            res.status().as_u16(), 
-            400,
-            "Test Failed for body: {}",
-            body
-        );
+        assert_eq!(res.status().as_u16(), 400, "Test Failed for body: {}", body);
     }
 }
 
 async fn spawn_app() -> TestApp {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .expect("Failed to bind to random port");
+    // The first time `initalize` is invoked the code in TRACING is executed
+    // All other invocations will instead skip execution
+    Lazy::force(&TRACING);
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind to random port");
     let port = listener.local_addr().unwrap().port();
     let address = format!("http://127.0.0.1:{}", port);
-    
+
     let mut configuration = get_configuration().expect("Failed to read configuration file");
     configuration.database.database_name = Uuid::new_v4().to_string();
     let connection_pool = configure_database(&configuration.database).await;
@@ -98,23 +122,20 @@ async fn spawn_app() -> TestApp {
 
     TestApp {
         address,
-        db_pool: connection_pool
+        db_pool: connection_pool,
     }
-
 }
 
 async fn configure_database(config: &DatabaseSettings) -> PgPool {
     // Create Database
-    let mut connection = PgConnection::connect(
-        &config.connection_string_without_db()
-    )
-    .await
-    .expect("Failed to connection to postgres");
+    let mut connection = PgConnection::connect(&config.connection_string_without_db())
+        .await
+        .expect("Failed to connection to postgres");
     connection
         .execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
         .await
         .expect("Faile to create database");
-    
+
     // Migrate Database
     let connection_pool = PgPool::connect(&config.connection_string())
         .await

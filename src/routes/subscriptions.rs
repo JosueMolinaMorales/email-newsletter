@@ -1,36 +1,58 @@
 use actix_web::{post, web, HttpResponse};
-use serde::{Serialize, Deserialize};
-use sqlx::{PgPool, query};
-use uuid::Uuid;
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use sqlx::{query, PgPool};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct EmailSubscription {
+pub struct EmailSubscription {
     email: String,
-    name: String
+    name: String,
 }
 
+#[tracing::instrument(
+    name = "Adding a new subscriber",
+    skip(form, pool),
+    fields(
+        request_id = %Uuid::new_v4(),
+        subscriber_email = %form.email,
+        subscriber_name = %form.name
+    )
+)]
 #[post("/subscription")]
-async fn subscription(
-    form: web::Json<EmailSubscription>,
-    pool: web::Data<PgPool>
-) -> HttpResponse {
-    match query!(
+async fn subscription(form: web::Json<EmailSubscription>, pool: web::Data<PgPool>) -> HttpResponse {
+    match insert_subscriber(&pool, &form).await {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(e) => {
+            tracing::error!("Failed to execute query: {:?}", e);
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[tracing::instrument(
+    name = "Saving new subscriber details in the database",
+    skip(form, pool)
+)]
+pub async fn insert_subscriber(
+    pool: &PgPool,
+    form: &EmailSubscription
+) -> Result<(), sqlx::Error> {
+    query!(
         r#"
         INSERT INTO subscriptions(id, email, name, subscribed_at)
         VALUES ($1, $2, $3, $4)
         "#,
         Uuid::new_v4(),
-        form.0.email,
-        form.0.name,
+        form.email,
+        form.name,
         Utc::now()
     )
-    .execute(pool.get_ref())
-    .await {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(e) => {
-            println!("Failed to execute query: {}", e);
-            HttpResponse::InternalServerError().finish()
-        }
-    }
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to execute query: {:?}", e);
+        e
+    })?;
+    Ok(())
 }
