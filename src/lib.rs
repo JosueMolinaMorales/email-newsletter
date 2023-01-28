@@ -1,19 +1,6 @@
-use std::net::TcpListener;
+mod configuration;
+mod routes;
+mod startup;
 
-use actix_web::{get, App, HttpServer, Responder, dev::Server};
-
-#[get("/")]
-async fn health_check() -> impl Responder {
-    "Welcome to the Email Newsletter API v0.0.1-alpha!"
-}
-
-pub fn run(listener: TcpListener) -> Result<Server, std::io::Error> {
-    let server = HttpServer::new(|| {
-        App::new()
-            .service(health_check)
-    })
-    .listen(listener)?
-    .run();
-
-    Ok(server)
-}
+pub use routes::*;
+pub use startup::*;
