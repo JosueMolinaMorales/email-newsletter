@@ -3,7 +3,6 @@ use email_newsletter::{
     startup::run, telemetry::{get_subscriber, init_subscriber},
 };
 use once_cell::sync::Lazy;
-use secrecy::ExposeSecret;
 use serde_json::json;
 use sqlx::{migrate, query, Connection, Executor, PgConnection, PgPool};
 use std::net::TcpListener;
@@ -129,7 +128,7 @@ async fn spawn_app() -> TestApp {
 
 async fn configure_database(config: &DatabaseSettings) -> PgPool {
     // Create Database
-    let mut connection = PgConnection::connect(&config.connection_string_without_db().expose_secret())
+    let mut connection = PgConnection::connect_with(&config.without_db())
         .await
         .expect("Failed to connection to postgres");
     connection
@@ -138,7 +137,7 @@ async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .expect("Faile to create database");
 
     // Migrate Database
-    let connection_pool = PgPool::connect(&config.connection_string().expose_secret())
+    let connection_pool = PgPool::connect_with(config.with_db())
         .await
         .expect("Failed to connect to postgres");
     migrate!("./migrations")
