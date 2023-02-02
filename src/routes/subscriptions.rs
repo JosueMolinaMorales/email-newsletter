@@ -1,14 +1,10 @@
 use actix_web::{post, web, HttpResponse};
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
 use sqlx::{query, PgPool};
+use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EmailSubscription {
-    email: String,
-    name: String,
-}
+use crate::domain::{Subscriber, NewSubscriptionForm, SubscriberName};
 
 #[tracing::instrument(
     name = "Adding a new subscriber",
@@ -19,8 +15,13 @@ pub struct EmailSubscription {
     )
 )]
 #[post("/subscription")]
-async fn subscription(form: web::Json<EmailSubscription>, pool: web::Data<PgPool>) -> HttpResponse {
-    match insert_subscriber(&pool, &form).await {
+async fn subscription(form: web::Json<NewSubscriptionForm>, pool: web::Data<PgPool>) -> HttpResponse {
+    let new_sub = Subscriber {
+        email: form.0.email,
+        name: SubscriberName::parse(form.0.name)
+    };
+
+    match insert_subscriber(&pool, &new_sub).await {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(e) => {
             tracing::error!("Failed to execute query: {:?}", e);
@@ -35,7 +36,7 @@ async fn subscription(form: web::Json<EmailSubscription>, pool: web::Data<PgPool
 )]
 pub async fn insert_subscriber(
     pool: &PgPool,
-    form: &EmailSubscription
+    form: &Subscriber
 ) -> Result<(), sqlx::Error> {
     query!(
         r#"
@@ -44,7 +45,7 @@ pub async fn insert_subscriber(
         "#,
         Uuid::new_v4(),
         form.email,
-        form.name,
+        form.name.as_ref(),
         Utc::now()
     )
     .execute(pool)
@@ -54,4 +55,13 @@ pub async fn insert_subscriber(
         e
     })?;
     Ok(())
+}
+
+pub fn is_valid_name(name: &str) -> bool {
+    let is_empty_or_whitespace = name.trim().is_empty();
+    let is_too_long = name.graphemes(true).count() > 256;
+    let forbidden_characters = ['/', '(', ')', '"', '<', '>', '\\', '{', '}'];
+    let contains_forbidden_characters = name.chars().any(|g| forbidden_characters.contains(&g));
+
+    !(is_empty_or_whitespace || is_too_long || contains_forbidden_characters)
 }

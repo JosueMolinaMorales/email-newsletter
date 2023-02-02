@@ -88,11 +88,15 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
     let client = reqwest::Client::new();
 
     let test_cases = vec![
-        json!({"email": "email@email.com"}).to_string(),
-        json!({"name": "name"}).to_string(),
-        json!({}).to_string(),
+        (json!({"email": "email@email.com"}).to_string(), "No Name"),
+        (json!({"name": "name"}).to_string(), "No email"),
+        (json!({}).to_string(), "No body"),
+        (json!({"email": "notanemail", "name": "name"}).to_string(), "Not an email"),
+        (json!({"name": "", "email": "email@email.com"}).to_string(), "Name empty"),
+        (json!({"name": "name", "email": ""}).to_string(), "Email Empty")
+
     ];
-    for body in test_cases {
+    for (body, description) in test_cases {
         let res = client
             .post(format!("{}/subscription", test_app.address))
             .body(body.clone())
@@ -100,7 +104,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
             .send()
             .await
             .expect("Failed to send request");
-        assert_eq!(res.status().as_u16(), 400, "Test Failed for body: {}", body);
+        assert_eq!(res.status().as_u16(), 400, "Test Failed for: {}", description);
     }
 }
 
