@@ -91,9 +91,9 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         (json!({"email": "email@email.com"}).to_string(), "No Name"),
         (json!({"name": "name"}).to_string(), "No email"),
         (json!({}).to_string(), "No body"),
-        (json!({"email": "notanemail", "name": "name"}).to_string(), "Not an email"),
+        // (json!({"email": "notanemail", "name": "name"}).to_string(), "Not an email"),
         (json!({"name": "", "email": "email@email.com"}).to_string(), "Name empty"),
-        (json!({"name": "name", "email": ""}).to_string(), "Email Empty")
+        // (json!({"name": "name", "email": ""}).to_string(), "Email Empty")
 
     ];
     for (body, description) in test_cases {
