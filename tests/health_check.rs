@@ -1,6 +1,6 @@
 use email_newsletter::{
     configuration::{get_configuration, DatabaseSettings},
-    startup::run, telemetry::{get_subscriber, init_subscriber},
+    startup::run, telemetry::{get_subscriber, init_subscriber}, email_client::EmailClient,
 };
 use once_cell::sync::Lazy;
 use serde_json::json;
@@ -120,7 +120,14 @@ async fn spawn_app() -> TestApp {
     let mut configuration = get_configuration().expect("Failed to read configuration file");
     configuration.database.database_name = Uuid::new_v4().to_string();
     let connection_pool = configure_database(&configuration.database).await;
-    let server = run(listener, connection_pool.clone()).expect("Failed to bind to address");
+
+    // Build a new email client
+    let sender_email = configuration.email_client.sender().expect("Invalid email address");
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email
+    );
+    let server = run(listener, connection_pool.clone(), email_client).expect("Failed to bind to address");
 
     let _ = tokio::spawn(server);
 
