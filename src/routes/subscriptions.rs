@@ -1,11 +1,25 @@
-use actix_web::{post, web, HttpResponse};
+use actix_web::{post, HttpResponse, web};
 use chrono::Utc;
 use sqlx::{query, PgPool};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-use crate::domain::{NewSubscriptionForm, SubscriberName, Subscriber};
+use crate::domain::{NewSubscriptionForm, SubscriberName, Subscriber, SubscriberEmail};
 
+
+impl TryFrom<NewSubscriptionForm> for Subscriber {
+    type Error = String;
+
+    fn try_from(new_sub: NewSubscriptionForm) -> Result<Self, Self::Error> {
+        let name = SubscriberName::parse(new_sub.name)?;
+        let email = SubscriberEmail::parse(new_sub.email)?;
+
+        Ok(Self {
+            email,
+            name
+        })
+    }
+}
 
 #[tracing::instrument(
     name = "Adding a new subscriber",
@@ -17,13 +31,9 @@ use crate::domain::{NewSubscriptionForm, SubscriberName, Subscriber};
 )]
 #[post("/subscription")]
 async fn subscription(form: web::Json<NewSubscriptionForm>, pool: web::Data<PgPool>) -> HttpResponse {
-    let name = match SubscriberName::parse(form.0.name) {
-        Ok(name) => name,
+    let new_sub: Subscriber = match form.0.try_into() {
+        Ok(sub) => sub,
         Err(_) => return HttpResponse::BadRequest().finish()
-    };
-    let new_sub = Subscriber {
-        email: form.0.email,
-        name
     };
 
     match insert_subscriber(&pool, &new_sub).await {
@@ -49,7 +59,7 @@ pub async fn insert_subscriber(
         VALUES ($1, $2, $3, $4)
         "#,
         Uuid::new_v4(),
-        form.email,
+        form.email.as_ref(),
         form.name.as_ref(),
         Utc::now()
     )

@@ -1,6 +1,7 @@
+use serde::{Serialize, Deserialize};
 use validator::validate_email;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SubscriberEmail(String);
 
 impl SubscriberEmail {
@@ -22,7 +23,8 @@ impl AsRef<str> for SubscriberEmail {
 #[cfg(test)]
 mod tests {
     use super::SubscriberEmail;
-    use claim::assert_err;
+    use claim::{assert_err, assert_ok};
+    use fake::{faker::internet::en::SafeEmail, Fake};
 
     #[test]
     fn empty_string_is_rejected() {
@@ -40,5 +42,11 @@ mod tests {
     fn email_missing_subject_is_rejected() {
         let email = "@domain.com".to_string();
         assert_err!(SubscriberEmail::parse(email));
+    }
+
+    #[test]
+    fn valid_emails_are_parsed_succesfully() {
+        let email = SafeEmail().fake();
+        assert_ok!(SubscriberEmail::parse(email));
     }
 }
