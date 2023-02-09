@@ -9,18 +9,11 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
     let test_app = spawn_app().await;
 
     // Act
-    let client = reqwest::Client::new();
     let body = json!({
         "email": "email@email.com",
         "name": "Jake Snow"
     });
-    let res = client
-        .post(format!("{}/subscription", test_app.address))
-        .body(body.to_string())
-        .header("Content-Type", "application/json")
-        .send()
-        .await
-        .expect("Failed to send request");
+    let res = test_app.post_subscription(body.to_string()).await;
 
     // Assert
     assert_eq!(res.status().as_u16(), 200);
@@ -37,7 +30,6 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 #[tokio::test]
 async fn subscribe_returns_a_400_when_data_is_missing() {
     let test_app = spawn_app().await;
-    let client = reqwest::Client::new();
 
     let test_cases = vec![
         (json!({"email": "email@email.com"}).to_string(), "No Name"),
@@ -45,13 +37,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         (json!({}).to_string(), "No body"),
     ];
     for (body, description) in test_cases {
-        let res = client
-            .post(format!("{}/subscription", test_app.address))
-            .body(body.clone())
-            .header("Content-Type", "application/json")
-            .send()
-            .await
-            .expect("Failed to send request");
+        let res = test_app.post_subscription(body).await; 
         assert_eq!(res.status().as_u16(), 400, "Test Failed for: {}", description);
     }
 }
@@ -59,7 +45,6 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
 #[tokio::test]
 async fn subscribe_returns_400_when_data_is_invalid() {
     let test_app = spawn_app().await;
-    let client = reqwest::Client::new();
 
     let test_cases = vec![
         (json!({"email": "notanemail", "name": "name"}).to_string(), "Not an email"),
@@ -68,13 +53,7 @@ async fn subscribe_returns_400_when_data_is_invalid() {
     ];
 
     for (body, description) in test_cases {
-        let res = client
-            .post(format!("{}/subscription", test_app.address))
-            .body(body.clone())
-            .header("Content-Type", "application/json")
-            .send()
-            .await
-            .expect("Failed to send request");
+        let res = test_app.post_subscription(body).await; 
         assert_eq!(res.status().as_u16(), 400, "Test Failed for: {}", description);
     }
 }

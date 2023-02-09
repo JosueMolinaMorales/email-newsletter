@@ -27,6 +27,18 @@ pub struct TestApp {
     pub db_pool: PgPool,
 }
 
+impl TestApp {
+    pub async fn post_subscription(&self, body: String) -> reqwest::Response {
+        reqwest::Client::new()
+            .post(&format!("{}/subscription", &self.address))
+            .header("Content-Type", "application/json")
+            .body(body)
+            .send()
+            .await
+            .expect("Failed to send request")
+    }
+}
+
 pub async fn spawn_app() -> TestApp {
     // The first time `initalize` is invoked the code in TRACING is executed
     // All other invocations will instead skip execution
@@ -77,3 +89,4 @@ async fn configure_database(config: &DatabaseSettings) -> PgPool {
 
     connection_pool
 }
+
