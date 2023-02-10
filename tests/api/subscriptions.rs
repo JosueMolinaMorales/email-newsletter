@@ -1,5 +1,6 @@
 use serde_json::json;
 use sqlx::query;
+use wiremock::{Mock, matchers::{method, path}, ResponseTemplate};
 
 use crate::helpers::spawn_app;
 
@@ -56,4 +57,22 @@ async fn subscribe_returns_400_when_data_is_invalid() {
         let res = test_app.post_subscription(body).await; 
         assert_eq!(res.status().as_u16(), 400, "Test Failed for: {}", description);
     }
+}
+
+#[tokio::test]
+async fn subscribe_sends_a_confirmation_email_for_valid_data() {
+    let app = spawn_app().await;
+    let body = json!({
+        "email": "email@email.com",
+        "name": "Jake Snow"
+    });
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscription(body.to_string()).await;
 }

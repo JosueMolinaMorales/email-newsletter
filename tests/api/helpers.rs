@@ -2,6 +2,7 @@ use email_newsletter::{telemetry::{init_subscriber, get_subscriber}, configurati
 use once_cell::sync::Lazy;
 use sqlx::{PgPool, PgConnection, sqlx_macros::migrate, Connection, Executor};
 use uuid::Uuid;
+use wiremock::MockServer;
 
 static TRACING: Lazy<()> = Lazy::new(|| {
     let default_filter_level = "info".to_string();
@@ -25,6 +26,7 @@ static TRACING: Lazy<()> = Lazy::new(|| {
 pub struct TestApp {
     pub address: String,
     pub db_pool: PgPool,
+    pub email_server: MockServer
 }
 
 impl TestApp {
@@ -44,12 +46,16 @@ pub async fn spawn_app() -> TestApp {
     // All other invocations will instead skip execution
     Lazy::force(&TRACING);
 
+    let email_server = MockServer::start().await;
+
     let configuration = {
         let mut c = get_configuration().expect("Failted to read configuration");
         // Use a different database for each test case
         c.database.database_name = Uuid::new_v4().to_string();
         // use a random OS port
         c.application.port = 0;
+        // use the mock server as email API
+        c.email_client.base_url = email_server.uri();
         c
     };
 
@@ -65,6 +71,7 @@ pub async fn spawn_app() -> TestApp {
     TestApp {
         address,
         db_pool: get_connection_pool(&configuration.database),
+        email_server
     }
 }
 
@@ -89,4 +96,3 @@ async fn configure_database(config: &DatabaseSettings) -> PgPool {
 
     connection_pool
 }
-

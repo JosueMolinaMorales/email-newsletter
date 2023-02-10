@@ -4,7 +4,7 @@ use sqlx::{query, PgPool};
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
-use crate::domain::{NewSubscriptionForm, SubscriberName, Subscriber, SubscriberEmail};
+use crate::{domain::{NewSubscriptionForm, SubscriberName, Subscriber, SubscriberEmail}, email_client::EmailClient};
 
 
 impl TryFrom<NewSubscriptionForm> for Subscriber {
@@ -30,19 +30,32 @@ impl TryFrom<NewSubscriptionForm> for Subscriber {
     )
 )]
 #[post("/subscription")]
-async fn subscription(form: web::Json<NewSubscriptionForm>, pool: web::Data<PgPool>) -> HttpResponse {
+async fn subscription(
+    form: web::Json<NewSubscriptionForm>, 
+    pool: web::Data<PgPool>,
+    email_client: web::Data<EmailClient>
+) -> HttpResponse {
     let new_sub: Subscriber = match form.0.try_into() {
         Ok(sub) => sub,
         Err(_) => return HttpResponse::BadRequest().finish()
     };
 
-    match insert_subscriber(&pool, &new_sub).await {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(e) => {
-            tracing::error!("Failed to execute query: {:?}", e);
-            HttpResponse::InternalServerError().finish()
-        }
+    if insert_subscriber(&pool, &new_sub).await.is_err() {
+        return HttpResponse::InternalServerError().finish()
     }
+    
+    // Send an email to the new subscriber
+    if email_client
+        .send_email(
+            new_sub.email, 
+            "Welcome!", 
+            "Welcome to our newsletter!", 
+            "Welcome to our newsletter!"
+        ).await.is_err() {
+            return HttpResponse::InternalServerError().finish();
+    }
+    
+    HttpResponse::Ok().finish()
 }
 
 #[tracing::instrument(
