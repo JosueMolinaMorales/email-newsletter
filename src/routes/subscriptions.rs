@@ -1,7 +1,6 @@
 use actix_web::{post, HttpResponse, web};
 use chrono::Utc;
 use sqlx::{query, PgPool};
-use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
 
 use crate::{domain::{NewSubscriptionForm, SubscriberName, Subscriber, SubscriberEmail}, email_client::EmailClient};
@@ -45,13 +44,7 @@ async fn subscription(
     }
     
     // Send an email to the new subscriber
-    if email_client
-        .send_email(
-            new_sub.email, 
-            "Welcome!", 
-            "Welcome to our newsletter!", 
-            "Welcome to our newsletter!"
-        ).await.is_err() {
+    if send_confirmation_email(&email_client, new_sub).await.is_err() {
             return HttpResponse::InternalServerError().finish();
     }
     
@@ -75,7 +68,7 @@ pub async fn insert_subscriber(
         form.email.as_ref(),
         form.name.as_ref(),
         Utc::now(),
-        "confirmed"
+        "pending_confirmation"
     )
     .execute(pool)
     .await
@@ -86,11 +79,30 @@ pub async fn insert_subscriber(
     Ok(())
 }
 
-pub fn is_valid_name(name: &str) -> bool {
-    let is_empty_or_whitespace = name.trim().is_empty();
-    let is_too_long = name.graphemes(true).count() > 256;
-    let forbidden_characters = ['/', '(', ')', '"', '<', '>', '\\', '{', '}'];
-    let contains_forbidden_characters = name.chars().any(|g| forbidden_characters.contains(&g));
-
-    !(is_empty_or_whitespace || is_too_long || contains_forbidden_characters)
+#[tracing::instrument(
+    name = "Send a confirmation email to a new subscriber",
+    skip(email_client, new_sub)
+)]
+pub async fn send_confirmation_email(
+    email_client: &EmailClient,
+    new_sub: Subscriber
+) -> Result<(), reqwest::Error> {
+    let confirmation_link = "https://localhost/subscriptions/confirm";
+    let plain_body = format!(
+        "Welcome to our newsletter!\nVisit {} to confirm your subscription.",
+        confirmation_link
+    );
+    let html_body = format!(
+        "Welcome to our newsletter! <br/>
+        Click <a href=\"{}\">here</a> to confirm your subscription
+        ",
+        confirmation_link
+    );
+    email_client
+        .send_email(
+            new_sub.email, 
+            "Welcome!", 
+            &html_body, 
+            &plain_body
+        ).await
 }
