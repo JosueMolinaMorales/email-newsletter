@@ -49,6 +49,9 @@ impl Application {
 #[derive(Debug)]
 pub struct ApplicationBaseUrl(pub String);
 
+#[derive(Debug)]
+pub struct ApplicationPort(pub u16);
+
 pub fn run(
     listener: TcpListener, 
     connection_pool: PgPool,
@@ -58,6 +61,7 @@ pub fn run(
     let connection = Data::new(connection_pool);
     let email_client = Data::new(email_client);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
+    let port = Data::new(ApplicationPort(listener.local_addr().expect("Cannot Get Port").port()));
     let server = HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
@@ -67,6 +71,7 @@ pub fn run(
             .app_data(connection.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())
+            .app_data(port.clone())
     })
     .listen(listener)?
     .run();

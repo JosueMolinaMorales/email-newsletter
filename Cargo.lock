@@ -671,6 +671,7 @@ dependencies = [
  "fake",
  "linkify",
  "once_cell",
+ "rand 0.8.5",
  "reqwest",
  "secrecy",
  "serde",

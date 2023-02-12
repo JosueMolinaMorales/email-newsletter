@@ -1,5 +1,6 @@
 use email_newsletter::{telemetry::{init_subscriber, get_subscriber}, configuration::{get_configuration, DatabaseSettings}, startup::{get_connection_pool, Application}};
 use once_cell::sync::Lazy;
+use serde_json::Value;
 use sqlx::{PgPool, PgConnection, sqlx_macros::migrate, Connection, Executor};
 use uuid::Uuid;
 use wiremock::MockServer;
@@ -23,6 +24,11 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     }
 });
 
+pub struct ConfirmationLinks {
+    pub html: reqwest::Url,
+    pub plain_text: reqwest::Url
+}
+
 pub struct TestApp {
     pub address: String,
     pub db_pool: PgPool,
@@ -39,6 +45,31 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to send request")
+    }
+
+    pub fn get_confirmation_links(
+        &self,
+        email_request: &wiremock::Request
+    ) -> ConfirmationLinks {
+        let body: Value = serde_json::from_slice(&email_request.body).unwrap();
+
+        let get_link = |s: &str| {
+            let links: Vec<_> = linkify::LinkFinder::new()
+                .links(s)
+                .filter(|l| *l.kind() == linkify::LinkKind::Url)
+                .collect();
+
+            assert_eq!(links.len(), 1);
+            let raw_link = links[0].as_str().to_owned();
+            let mut confirmation_link = reqwest::Url::parse(&raw_link).unwrap();
+            assert_eq!(confirmation_link.host_str().unwrap(), "127.0.0.1");
+            confirmation_link.set_port(Some(self.port)).unwrap();
+            confirmation_link
+        };
+
+        let html = get_link(&body["HtmlBody"].as_str().unwrap());
+        let plain_text = get_link(&body["TextBody"].as_str().unwrap());
+        ConfirmationLinks { html, plain_text }
     }
 }
 
