@@ -1,7 +1,9 @@
-use actix_web::{post, HttpResponse, web};
+use std::fmt::Display;
+
+use actix_web::{post, HttpResponse, web, ResponseError};
 use chrono::Utc;
 use rand::{thread_rng, Rng, distributions::Alphanumeric};
-use sqlx::{query, PgPool};
+use sqlx::{query, PgPool, Transaction, Postgres};
 use uuid::Uuid;
 
 use crate::{domain::{NewSubscriptionForm, SubscriberName, Subscriber, SubscriberEmail}, email_client::EmailClient, startup::{ApplicationBaseUrl, ApplicationPort}};
@@ -36,23 +38,24 @@ async fn subscription(
     email_client: web::Data<EmailClient>,
     base_url: web::Data<ApplicationBaseUrl>,
     port: web::Data<ApplicationPort>
-) -> HttpResponse {
+) -> Result<HttpResponse, actix_web::Error> {
     let new_sub: Subscriber = match form.0.try_into() {
         Ok(sub) => sub,
-        Err(_) => return HttpResponse::BadRequest().finish()
+        Err(_) => return Ok(HttpResponse::BadRequest().finish())
+    };
+    let mut transaction = match pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
     };
 
-    let subscriber_id = match insert_subscriber(&pool, &new_sub).await {
+    let subscriber_id = match insert_subscriber(&mut transaction, &new_sub).await {
         Ok(subscriber_id) => subscriber_id,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
+        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
     };
     let subscription_token = generate_subscription_token();
-    if store_token(&pool, subscriber_id, &subscription_token)
-        .await
-        .is_err() 
-    {
-        return HttpResponse::InternalServerError().finish();
-    }
+
+    store_token(&mut transaction, subscriber_id, &subscription_token).await?;
+    
     // Send an email to the new subscriber
     if send_confirmation_email(
         &email_client,
@@ -64,42 +67,44 @@ async fn subscription(
     .await
     .is_err() 
     {
-        return HttpResponse::InternalServerError().finish();
+        return Ok(HttpResponse::InternalServerError().finish());
     }
-    
-    HttpResponse::Ok().finish()
+    if transaction.commit().await.is_err() {
+        return Ok(HttpResponse::InternalServerError().finish());
+    }
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[tracing::instrument(
     name = "Store subscription token in the database",
-    skip(subscription_token, pool)
+    skip(subscription_token, transaction)
 )]
 pub async fn store_token(
-    pool: &PgPool,
+    transaction: &mut Transaction<'_, Postgres>,
     subscriber_id: Uuid,
     subscription_token: &str
-) -> Result<(), sqlx::Error> {
+) -> Result<(), StoreTokenError> {
     sqlx::query!(
         r#"INSERT INTO subscription_tokens (subscription_token, subscriber_id)
         VALUES ($1, $2)"#,
         subscription_token,
         subscriber_id
     )
-    .execute(pool)
+    .execute(transaction)
     .await
     .map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);
-        e
+        StoreTokenError(e)
     })?;
     Ok(())
 }
 
 #[tracing::instrument(
     name = "Saving new subscriber details in the database",
-    skip(form, pool)
+    skip(form, transaction)
 )]
 pub async fn insert_subscriber(
-    pool: &PgPool,
+    transaction: &mut Transaction<'_, Postgres>,
     form: &Subscriber
 ) -> Result<Uuid, sqlx::Error> {
     let subscriber_id = Uuid::new_v4();
@@ -114,7 +119,7 @@ pub async fn insert_subscriber(
         Utc::now(),
         "pending_confirmation"
     )
-    .execute(pool)
+    .execute(transaction)
     .await
     .map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);
@@ -165,4 +170,17 @@ fn generate_subscription_token() -> String {
         .map(char::from)
         .take(25)
         .collect()
+}
+
+#[derive(Debug)]
+pub struct StoreTokenError(sqlx::Error);
+
+impl ResponseError for StoreTokenError {}
+
+impl Display for StoreTokenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,
+            "A database error was encountered trying to store a subscription token."
+        )
+    }
 }
