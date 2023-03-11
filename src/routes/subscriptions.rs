@@ -41,9 +41,20 @@ async fn subscription(
     port: web::Data<ApplicationPort>
 ) -> Result<HttpResponse, SubscribeError> {
     let new_sub: Subscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
-    let mut transaction = pool.begin().await.map_err(SubscribeError::PoolError)?;
+    let mut transaction = pool
+        .begin()
+        .await
+        .map_err(|e| SubscribeError::UnexpectedError(
+            Box::new(e), 
+            "An unexpected error occurred while trying to begin a transaction.".into()
+        ))?;
 
-    let subscriber_id = insert_subscriber(&mut transaction, &new_sub).await.map_err(SubscribeError::InsertSubscriberError)?;
+    let subscriber_id = insert_subscriber(&mut transaction, &new_sub)
+        .await
+        .map_err(|e| SubscribeError::UnexpectedError(
+            Box::new(e),
+            "An unexpected error occurred while trying to insert a new subscriber.".into()
+        ))?;
 
     let subscription_token = generate_subscription_token();
 
@@ -57,7 +68,13 @@ async fn subscription(
         port.0,
         &subscription_token
     ).await?;
-    transaction.commit().await.map_err(SubscribeError::TransactionCommitError)?;
+    transaction
+        .commit()
+        .await
+        .map_err(|e| SubscribeError::UnexpectedError(
+            Box::new(e),
+            "An unexpected error occurred while trying to commit the transaction.".into()
+        ))?;
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -69,7 +86,7 @@ pub async fn store_token(
     transaction: &mut Transaction<'_, Postgres>,
     subscriber_id: Uuid,
     subscription_token: &str
-) -> Result<(), StoreTokenError> {
+) -> Result<(), SubscribeError> {
     sqlx::query!(
         r#"INSERT INTO subscription_tokens (subscription_token, subscriber_id)
         VALUES ($1, $2)"#,
@@ -80,7 +97,10 @@ pub async fn store_token(
     .await
     .map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);
-        StoreTokenError(e)
+        SubscribeError::UnexpectedError(
+            Box::new(e),
+            "An unexpected error occurred while trying to store the subscription token.".into()
+        )
     })?;
     Ok(())
 }
@@ -124,7 +144,7 @@ pub async fn send_confirmation_email(
     base_url: &str,
     port: u16,
     subscription_token: &str,
-) -> Result<(), reqwest::Error> {
+) -> Result<(), SubscribeError> {
     let confirmation_link = format!(
         "{}:{}/subscriptions/confirm?subscription_token={}",
         port,
@@ -147,7 +167,16 @@ pub async fn send_confirmation_email(
             "Welcome!", 
             &html_body, 
             &plain_body
-        ).await
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to send email: {:?}", e);
+            SubscribeError::UnexpectedError(
+                Box::new(e),
+                "An unexpected error occurred while trying to send the confirmation email.".into()
+            )
+        })
+        
 }
 
 fn generate_subscription_token() -> String {
@@ -197,16 +226,8 @@ fn error_chain_fmt(
 pub enum SubscribeError {
     #[error("{0}")]
     ValidationError(String),
-    #[error("Failed to acquire a Postgres connection from the pool")]
-    PoolError(#[source] sqlx::Error),
-    #[error("Failed to insert new subscriber into the database")]
-    InsertSubscriberError(#[source] sqlx::Error),
-    #[error("Failed to commit SSQL transaction to store a new subscriber")]
-    TransactionCommitError(#[source] sqlx::Error),
-    #[error("Failed to store a subscription token")]
-    StoreTokenError(#[from] StoreTokenError),
-    #[error("Failed to send a confirmation email")]
-    SendEmailError(#[from] reqwest::Error),
+    #[error("{1}")]
+    UnexpectedError(#[source] Box<dyn std::error::Error>, String),
 }
 
 impl std::fmt::Debug for SubscribeError {
@@ -219,11 +240,7 @@ impl ResponseError for SubscribeError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::ValidationError(_) => StatusCode::BAD_REQUEST,
-            Self::PoolError(_) |
-            Self::InsertSubscriberError(_) |
-            Self::TransactionCommitError(_) |
-            Self::SendEmailError(_) |
-            Self::StoreTokenError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnexpectedError(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
