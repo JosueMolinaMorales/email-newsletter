@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use actix_web::{post, HttpResponse, web, ResponseError};
+use anyhow::{Context, anyhow};
 use chrono::Utc;
 use rand::{thread_rng, Rng, distributions::Alphanumeric};
 use reqwest::StatusCode;
@@ -44,22 +45,23 @@ async fn subscription(
     let mut transaction = pool
         .begin()
         .await
-        .map_err(|e| SubscribeError::UnexpectedError(
-            Box::new(e), 
-            "An unexpected error occurred while trying to begin a transaction.".into()
-        ))?;
+        .context("An unexpected error occurred while trying to begin a transaction.")?;
 
     let subscriber_id = insert_subscriber(&mut transaction, &new_sub)
         .await
-        .map_err(|e| SubscribeError::UnexpectedError(
-            Box::new(e),
-            "An unexpected error occurred while trying to insert a new subscriber.".into()
-        ))?;
+        .context("An unexpected error occurred while trying to insert a new subscriber.")?;
 
     let subscription_token = generate_subscription_token();
 
-    store_token(&mut transaction, subscriber_id, &subscription_token).await?;
-    
+    store_token(&mut transaction, subscriber_id, &subscription_token)
+        .await
+        .context("Failed to store the confirmation token for a new subcriber.")?;
+
+    transaction
+        .commit()
+        .await
+        .context("An unexpected error occurred while trying to commit the transaction.")?;
+
     // Send an email to the new subscriber
     send_confirmation_email(
         &email_client,
@@ -67,14 +69,10 @@ async fn subscription(
         &base_url.0,
         port.0,
         &subscription_token
-    ).await?;
-    transaction
-        .commit()
-        .await
-        .map_err(|e| SubscribeError::UnexpectedError(
-            Box::new(e),
-            "An unexpected error occurred while trying to commit the transaction.".into()
-        ))?;
+    )
+    .await
+    .context("Failed to send a confirmation email.")?;
+
     Ok(HttpResponse::Ok().finish())
 }
 
@@ -86,7 +84,7 @@ pub async fn store_token(
     transaction: &mut Transaction<'_, Postgres>,
     subscriber_id: Uuid,
     subscription_token: &str
-) -> Result<(), SubscribeError> {
+) -> Result<(), StoreTokenError> {
     sqlx::query!(
         r#"INSERT INTO subscription_tokens (subscription_token, subscriber_id)
         VALUES ($1, $2)"#,
@@ -97,10 +95,7 @@ pub async fn store_token(
     .await
     .map_err(|e| {
         tracing::error!("Failed to execute query: {:?}", e);
-        SubscribeError::UnexpectedError(
-            Box::new(e),
-            "An unexpected error occurred while trying to store the subscription token.".into()
-        )
+        StoreTokenError(e)
     })?;
     Ok(())
 }
@@ -164,17 +159,13 @@ pub async fn send_confirmation_email(
     email_client
         .send_email(
             new_sub.email, 
-            "Welcome!", 
+            "Welcome!",
             &html_body, 
             &plain_body
         )
         .await
         .map_err(|e| {
-            tracing::error!("Failed to send email: {:?}", e);
-            SubscribeError::UnexpectedError(
-                Box::new(e),
-                "An unexpected error occurred while trying to send the confirmation email.".into()
-            )
+            SubscribeError::UnexpectedError(anyhow!(e))
         })
         
 }
@@ -226,8 +217,8 @@ fn error_chain_fmt(
 pub enum SubscribeError {
     #[error("{0}")]
     ValidationError(String),
-    #[error("{1}")]
-    UnexpectedError(#[source] Box<dyn std::error::Error>, String),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 impl std::fmt::Debug for SubscribeError {
@@ -240,7 +231,7 @@ impl ResponseError for SubscribeError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::ValidationError(_) => StatusCode::BAD_REQUEST,
-            Self::UnexpectedError(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
