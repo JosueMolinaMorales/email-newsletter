@@ -1,7 +1,11 @@
-use email_newsletter::{telemetry::{init_subscriber, get_subscriber}, configuration::{get_configuration, DatabaseSettings}, startup::{get_connection_pool, Application}};
+use email_newsletter::{
+    configuration::{get_configuration, DatabaseSettings},
+    startup::{get_connection_pool, Application},
+    telemetry::{get_subscriber, init_subscriber},
+};
 use once_cell::sync::Lazy;
 use serde_json::Value;
-use sqlx::{PgPool, PgConnection, sqlx_macros::migrate, Connection, Executor};
+use sqlx::{sqlx_macros::migrate, Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use wiremock::MockServer;
 
@@ -10,30 +14,24 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     let subscriber_name = "test".to_string();
 
     if std::env::var("TEST_LOG").is_ok() {
-        let subscriber = get_subscriber(
-            subscriber_name, default_filter_level, std::io::stdout
-        );
+        let subscriber = get_subscriber(subscriber_name, default_filter_level, std::io::stdout);
         init_subscriber(subscriber);
     } else {
-        let subscriber = get_subscriber(
-            subscriber_name,
-            default_filter_level,
-            std::io::sink
-        );
+        let subscriber = get_subscriber(subscriber_name, default_filter_level, std::io::sink);
         init_subscriber(subscriber);
     }
 });
 
 pub struct ConfirmationLinks {
     pub html: reqwest::Url,
-    pub plain_text: reqwest::Url
+    pub plain_text: reqwest::Url,
 }
 
 pub struct TestApp {
     pub address: String,
     pub db_pool: PgPool,
     pub email_server: MockServer,
-    pub port: u16
+    pub port: u16,
 }
 
 impl TestApp {
@@ -47,10 +45,7 @@ impl TestApp {
             .expect("Failed to send request")
     }
 
-    pub fn get_confirmation_links(
-        &self,
-        email_request: &wiremock::Request
-    ) -> ConfirmationLinks {
+    pub fn get_confirmation_links(&self, email_request: &wiremock::Request) -> ConfirmationLinks {
         let body: Value = serde_json::from_slice(&email_request.body).unwrap();
 
         let get_link = |s: &str| {
@@ -72,16 +67,23 @@ impl TestApp {
         ConfirmationLinks { html, plain_text }
     }
 
-    pub async fn post_newsletters(
-        &self,
-        body: Value
-    ) -> reqwest::Response {
+    pub async fn post_newsletters(&self, body: Value) -> reqwest::Response {
+        let (username, password) = self.test_user().await;
         reqwest::Client::new()
             .post(&format!("{}/newsletters", &self.address))
+            .basic_auth(username, Some(password))
             .json(&body)
             .send()
             .await
             .expect("Failed to execute request")
+    }
+
+    pub async fn test_user(&self) -> (String, String) {
+        let row = sqlx::query!("SELECT username, password FROM users LIMIT 1",)
+            .fetch_one(&self.db_pool)
+            .await
+            .expect("Failed to fetch test users.");
+        (row.username, row.password)
     }
 }
 
@@ -113,12 +115,29 @@ pub async fn spawn_app() -> TestApp {
     let address = format!("http://127.0.0.1:{}", application.port());
     let _ = tokio::spawn(application.run_until_stopped());
 
-    TestApp {
+    let test_app = TestApp {
         address,
         port: application_port,
         db_pool: get_connection_pool(&configuration.database),
-        email_server
-    }
+        email_server,
+    };
+    add_test_user(&test_app.db_pool).await;
+    test_app
+}
+
+async fn add_test_user(pool: &PgPool) {
+    sqlx::query!(
+        r#"
+            INSERT INTO users (user_id, username, password)
+            VALUES ($1, $2, $3)
+        "#,
+        Uuid::new_v4(),
+        Uuid::new_v4().to_string(),
+        Uuid::new_v4().to_string()
+    )
+    .execute(pool)
+    .await
+    .expect("Failed to create test users");
 }
 
 async fn configure_database(config: &DatabaseSettings) -> PgPool {
