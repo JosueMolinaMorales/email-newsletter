@@ -48,7 +48,7 @@ jobs:
             - name: Migrate database
               run: |
                 sudo apt-get install libpq-dev -y
-                cargo install --version=0.6.0 sqlx-cli --no-default-features --features postgres
+                cargo install --version=0.6.0 sqlx-cli --no-default-features --features postgres runtime-tokio-rustls
                 SKIP_DOCKER=true ./scripts/init_db.sh
             - name: Run cargo test
               uses: actions-rs/cargo@v1
@@ -108,7 +108,7 @@ jobs:
             - name: Migrate database
               run: |
                 sudo apt-get install libpq-dev -y
-                cargo install --version=0.2.0 sqlx-cli --no-default-features --features postgres
+                cargo install --version=0.6.2 sqlx-cli --no-default-features --features postgres runtime-tokio-rustls
                 SKIP_DOCKER=true ./scripts/init_db.sh
             - name: Run cargo-tarpaulin
               uses: actions-rs/tarpaulin@v0.1
