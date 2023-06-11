@@ -19,7 +19,6 @@ jobs:
     
           - name: Run cargo check
             uses: actions-rs/cargo@v1
-            continue-on-error: true  # WARNING: only for this example, remove it!
             with:
               command: check
     
@@ -48,7 +47,7 @@ jobs:
             - name: Migrate database
               run: |
                 sudo apt-get install libpq-dev -y
-                cargo install --version=0.6.0 sqlx-cli --no-default-features --features postgres runtime-tokio-rustls
+                cargo install --version=0.6.0 sqlx-cli --no-default-features --features postgres,runtime-tokio-rustls
                 SKIP_DOCKER=true ./scripts/init_db.sh
             - name: Run cargo test
               uses: actions-rs/cargo@v1
@@ -72,14 +71,12 @@ jobs:
     
           - name: Run cargo fmt
             uses: actions-rs/cargo@v1
-            continue-on-error: true  # WARNING: only for this example, remove it!
             with:
               command: fmt
               args: --all -- --check
     
           - name: Run cargo clippy
             uses: actions-rs/cargo@v1
-            continue-on-error: true  # WARNING: only for this example, remove it!
             with:
               command: clippy
               args: -- -D warnings
@@ -108,7 +105,7 @@ jobs:
             - name: Migrate database
               run: |
                 sudo apt-get install libpq-dev -y
-                cargo install --version=0.6.2 sqlx-cli --no-default-features --features postgres runtime-tokio-rustls
+                cargo install --version=0.6.2 sqlx-cli --no-default-features --features postgres,runtime-tokio-rustls
                 SKIP_DOCKER=true ./scripts/init_db.sh
             - name: Run cargo-tarpaulin
               uses: actions-rs/tarpaulin@v0.1
