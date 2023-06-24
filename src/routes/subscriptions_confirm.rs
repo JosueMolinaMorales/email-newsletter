@@ -1,48 +1,33 @@
-
-use actix_web::{HttpResponse, get, web};
+use actix_web::{get, web, HttpResponse};
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Deserialize, Debug)]
 pub struct Parameters {
-    subscription_token: String
+    subscription_token: String,
 }
 
-#[tracing::instrument(
-    name = "Confrim a pending subscriber"
-)]
+#[tracing::instrument(name = "Confrim a pending subscriber")]
 #[get("/subscriptions/confirm")]
-pub async fn confirm(
-    params: web::Query<Parameters>,
-    pool: web::Data<PgPool>
-) -> HttpResponse {
-    let id = match get_subscriber_id_from_token(
-        &pool,
-        &params.subscription_token
-    ).await {
+pub async fn confirm(params: web::Query<Parameters>, pool: web::Data<PgPool>) -> HttpResponse {
+    let id = match get_subscriber_id_from_token(&pool, &params.subscription_token).await {
         Ok(id) => id,
-        Err(_) => return HttpResponse::InternalServerError().finish()
+        Err(_) => return HttpResponse::InternalServerError().finish(),
     };
     match id {
         None => HttpResponse::Unauthorized().finish(),
         Some(subscriber_id) => {
             if confirm_subscriber(&pool, subscriber_id).await.is_err() {
-                return HttpResponse::InternalServerError().finish()
+                return HttpResponse::InternalServerError().finish();
             }
-            return HttpResponse::Ok().finish()
+            return HttpResponse::Ok().finish();
         }
     }
 }
 
-#[tracing::instrument(
-    name = "Mark subscriber as confirmed",
-    skip(subscriber_id, pool)
-)]
-pub async fn confirm_subscriber(
-    pool: &PgPool,
-    subscriber_id: Uuid
-) -> Result<(), sqlx::Error> {
+#[tracing::instrument(name = "Mark subscriber as confirmed", skip(subscriber_id, pool))]
+pub async fn confirm_subscriber(pool: &PgPool, subscriber_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"UPDATE subscriptions SET status = 'confirmed' WHERE id = $1"#,
         subscriber_id
@@ -56,13 +41,10 @@ pub async fn confirm_subscriber(
     Ok(())
 }
 
-#[tracing::instrument(
-    name = "Get subscriber_id from token",
-    skip(subscription_token, pool)
-)]
+#[tracing::instrument(name = "Get subscriber_id from token", skip(subscription_token, pool))]
 pub async fn get_subscriber_id_from_token(
     pool: &PgPool,
-    subscription_token: &str
+    subscription_token: &str,
 ) -> Result<Option<Uuid>, sqlx::Error> {
     let result = sqlx::query!(
         "SELECT subscriber_id FROM subscription_tokens \
@@ -77,4 +59,3 @@ pub async fn get_subscriber_id_from_token(
     })?;
     Ok(result.map(|r| r.subscriber_id))
 }
-

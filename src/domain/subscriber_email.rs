@@ -1,5 +1,5 @@
+use serde::{Deserialize, Serialize};
 use std::fmt::Formatter;
-use serde::{Serialize, Deserialize};
 use validator::validate_email;
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,21 +1,24 @@
 use std::time::Duration;
 
-use secrecy::{Secret, ExposeSecret};
+use secrecy::{ExposeSecret, Secret};
 use serde_aux::field_attributes::deserialize_number_from_string;
-use sqlx::{postgres::{PgConnectOptions, PgSslMode}, ConnectOptions};
+use sqlx::{
+    postgres::{PgConnectOptions, PgSslMode},
+    ConnectOptions,
+};
 
 use crate::domain::SubscriberEmail;
 
 pub enum Environment {
     Development,
-    Production
+    Production,
 }
 
 impl Environment {
     pub fn as_str(&self) -> &'static str {
         match self {
             Environment::Development => "development",
-            Environment::Production => "production"
+            Environment::Production => "production",
         }
     }
 }
@@ -30,7 +33,7 @@ impl TryFrom<String> for Environment {
             other => Err(format!(
                 "{} is not a supported environment. `development` and `production` are acceptable.",
                 other
-            ))
+            )),
         }
     }
 }
@@ -47,7 +50,7 @@ pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,
     pub authorization_token: Secret<String>,
-    pub timeout_milliseconds: u64
+    pub timeout_milliseconds: u64,
 }
 
 impl EmailClientSettings {
@@ -64,7 +67,7 @@ pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
-    pub base_url: String
+    pub base_url: String,
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -75,7 +78,7 @@ pub struct DatabaseSettings {
     pub port: u16,
     pub host: String,
     pub database_name: String,
-    pub require_ssl: bool
+    pub require_ssl: bool,
 }
 
 impl DatabaseSettings {
@@ -113,10 +116,20 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     // Init our config reader
     let settings = config::Config::builder()
         // Add configuration values from a file named `configuration.yaml`
-        .add_source(config::File::from(configuration_directory.join("base.yaml")))
-        .add_source(config::File::from(configuration_directory.join("local.yaml")))
-        .add_source(config::File::from(configuration_directory.join(&environment_filename)))
-        .add_source(config::Environment::with_prefix("APP").prefix_separator("_").separator("__"))
+        .add_source(config::File::from(
+            configuration_directory.join("base.yaml"),
+        ))
+        .add_source(config::File::from(
+            configuration_directory.join("local.yaml"),
+        ))
+        .add_source(config::File::from(
+            configuration_directory.join(&environment_filename),
+        ))
+        .add_source(
+            config::Environment::with_prefix("APP")
+                .prefix_separator("_")
+                .separator("__"),
+        )
         .build()?;
     // Try to convert the configuation values it read into our settings type
     settings.try_deserialize::<Settings>()
