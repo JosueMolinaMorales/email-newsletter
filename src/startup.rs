@@ -3,7 +3,11 @@ use crate::{
     email_client::EmailClient,
     routes::*,
 };
-use actix_web::{dev::Server, web::Data, App, HttpServer};
+use actix_web::{
+    dev::Server,
+    web::{self, Data},
+    App, HttpServer,
+};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
@@ -80,6 +84,9 @@ pub fn run(
             .service(subscription)
             .service(confirm)
             .service(publish_newsletter)
+            .route("/", web::get().to(home))
+            .route("/login", web::get().to(login_form))
+            .route("/login", web::post().to(login))
             .app_data(connection.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())
