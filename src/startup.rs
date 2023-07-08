@@ -1,36 +1,46 @@
-use crate::{routes::*, email_client::EmailClient, configuration::{Settings, DatabaseSettings}};
+use crate::{
+    configuration::{DatabaseSettings, Settings},
+    email_client::EmailClient,
+    routes::*,
+};
 use actix_web::{dev::Server, web::Data, App, HttpServer};
-use sqlx::{PgPool, postgres::PgPoolOptions};
-use tracing_actix_web::TracingLogger;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::net::TcpListener;
+use tracing_actix_web::TracingLogger;
 
 pub struct Application {
     port: u16,
-    server: Server
+    server: Server,
 }
 
 impl Application {
     pub async fn build(configuration: Settings) -> Result<Self, std::io::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
-    
+
         // Build an EmailClient
-        let sender_email = configuration.email_client.sender().expect("Invalid sender email");
+        let sender_email = configuration
+            .email_client
+            .sender()
+            .expect("Invalid sender email");
         let timeout = configuration.email_client.timeout();
         let email_client = EmailClient::new(
             configuration.email_client.base_url.to_owned(),
             sender_email,
             configuration.email_client.authorization_token.to_owned(),
-            timeout
+            timeout,
         );
-    
-        let address = format!("{}:{}", configuration.application.host, configuration.application.port);
+
+        let address = format!(
+            "{}:{}",
+            configuration.application.host, configuration.application.port
+        );
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
         let server = run(
-            listener, 
-            connection_pool, 
+            listener,
+            connection_pool,
             email_client,
-            configuration.application.base_url
+            configuration.application.base_url,
         )?;
 
         Ok(Self { port, server })
@@ -43,7 +53,6 @@ impl Application {
     pub async fn run_until_stopped(self) -> Result<(), std::io::Error> {
         self.server.await
     }
-    
 }
 
 #[derive(Debug)]
@@ -53,15 +62,17 @@ pub struct ApplicationBaseUrl(pub String);
 pub struct ApplicationPort(pub u16);
 
 pub fn run(
-    listener: TcpListener, 
+    listener: TcpListener,
     connection_pool: PgPool,
     email_client: EmailClient,
-    base_url: String
+    base_url: String,
 ) -> Result<Server, std::io::Error> {
     let connection = Data::new(connection_pool);
     let email_client = Data::new(email_client);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
-    let port = Data::new(ApplicationPort(listener.local_addr().expect("Cannot Get Port").port()));
+    let port = Data::new(ApplicationPort(
+        listener.local_addr().expect("Cannot Get Port").port(),
+    ));
     let server = HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
@@ -80,9 +91,7 @@ pub fn run(
     Ok(server)
 }
 
-pub fn get_connection_pool(
-    configuration: &DatabaseSettings
-) -> PgPool {
+pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
     PgPoolOptions::new()
         .acquire_timeout(std::time::Duration::from_secs(2))
         .connect_lazy_with(configuration.with_db())

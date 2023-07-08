@@ -1,1 +1,2 @@
 output-file: ./lcov.info
+output-type: cobertura

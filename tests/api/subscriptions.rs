@@ -1,6 +1,9 @@
 use serde_json::json;
 use sqlx::query;
-use wiremock::{Mock, matchers::{method, path}, ResponseTemplate};
+use wiremock::{
+    matchers::{method, path},
+    Mock, ResponseTemplate,
+};
 
 use crate::helpers::spawn_app;
 
@@ -39,9 +42,9 @@ async fn subscribe_persists_the_new_subscriber() {
         .expect(1)
         .mount(&app.email_server)
         .await;
-    
+
     app.post_subscription(body.to_string()).await;
-    
+
     let saved = query!("SELECT email, name, status FROM subscriptions")
         .fetch_one(&app.db_pool)
         .await
@@ -62,8 +65,13 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         (json!({}).to_string(), "No body"),
     ];
     for (body, description) in test_cases {
-        let res = test_app.post_subscription(body).await; 
-        assert_eq!(res.status().as_u16(), 400, "Test Failed for: {}", description);
+        let res = test_app.post_subscription(body).await;
+        assert_eq!(
+            res.status().as_u16(),
+            400,
+            "Test Failed for: {}",
+            description
+        );
     }
 }
 
@@ -72,14 +80,28 @@ async fn subscribe_returns_400_when_data_is_invalid() {
     let test_app = spawn_app().await;
 
     let test_cases = vec![
-        (json!({"email": "notanemail", "name": "name"}).to_string(), "Not an email"),
-        (json!({"name": "", "email": "email@email.com"}).to_string(), "Name empty"),
-        (json!({"name": "name", "email": ""}).to_string(), "Email Empty")
+        (
+            json!({"email": "notanemail", "name": "name"}).to_string(),
+            "Not an email",
+        ),
+        (
+            json!({"name": "", "email": "email@email.com"}).to_string(),
+            "Name empty",
+        ),
+        (
+            json!({"name": "name", "email": ""}).to_string(),
+            "Email Empty",
+        ),
     ];
 
     for (body, description) in test_cases {
-        let res = test_app.post_subscription(body).await; 
-        assert_eq!(res.status().as_u16(), 400, "Test Failed for: {}", description);
+        let res = test_app.post_subscription(body).await;
+        assert_eq!(
+            res.status().as_u16(),
+            400,
+            "Test Failed for: {}",
+            description
+        );
     }
 }
 
