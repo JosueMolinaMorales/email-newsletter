@@ -3,7 +3,7 @@ use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use secrecy::{ExposeSecret, Secret};
 use sqlx::PgPool;
 
-use crate::{routes::PublishError, telemetry::spawn_blocking_with_tracing};
+use crate::telemetry::spawn_blocking_with_tracing;
 
 #[derive(thiserror::Error, Debug)]
 pub enum AuthError {
@@ -33,8 +33,7 @@ pub async fn validate_credentials(
         current_span.in_scope(|| verify_password_hash(expected_password_hash, credentials.password))
     })
     .await
-    .context("Failed to spawn bloacking task")
-    .map_err(AuthError::UnexpectedError)?;
+    .context("Failed to spawn bloacking task")??;
 
     Ok(user_id)
 }
@@ -46,10 +45,10 @@ pub async fn validate_credentials(
 fn verify_password_hash(
     expected_password_hash: Secret<String>,
     password_candidate: Secret<String>,
-) -> Result<(), PublishError> {
+) -> Result<(), AuthError> {
     let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
         .context("Failed to parse hash in PHC string format")
-        .map_err(PublishError::UnexpectedError)?;
+        .map_err(AuthError::UnexpectedError)?;
 
     Argon2::default()
         .verify_password(
@@ -57,7 +56,7 @@ fn verify_password_hash(
             &expected_password_hash,
         )
         .context("Invalid Password")
-        .map_err(PublishError::AuthError)
+        .map_err(AuthError::UnexpectedError)
 }
 
 async fn get_stored_credentials(
