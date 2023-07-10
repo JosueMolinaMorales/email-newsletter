@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 
+use actix_session::Session;
 use actix_web::{web, HttpResponse, ResponseError};
+use anyhow::Context;
 use reqwest::{header::LOCATION, StatusCode};
 use secrecy::Secret;
 use sqlx::PgPool;
@@ -16,10 +18,11 @@ pub struct FormData {
     password: Secret<String>,
 }
 
-#[tracing::instrument(skip(form, pool), fields(username=tracing::field::Empty, user_id=tracing::field::Empty))]
+#[tracing::instrument(skip(form, pool, session), fields(username=tracing::field::Empty, user_id=tracing::field::Empty))]
 pub async fn login(
     form: web::Form<FormData>,
     pool: web::Data<PgPool>,
+    session: Session,
 ) -> Result<HttpResponse, LoginError> {
     let creds = Credentials {
         username: form.0.username,
@@ -33,8 +36,13 @@ pub async fn login(
             AuthError::UnexpectedError(_) => LoginError::UnexpectedError(e.into()),
         })?;
     tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
+    session.renew();
+    session
+        .insert("user_id", user_id)
+        .context("Failed to insert user id into session")
+        .map_err(LoginError::UnexpectedError)?;
     Ok(HttpResponse::SeeOther()
-        .insert_header((LOCATION, "/"))
+        .insert_header((LOCATION, "/admin/dashboard"))
         .finish())
 }
 

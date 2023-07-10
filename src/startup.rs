@@ -105,6 +105,7 @@ pub async fn run(
             .service(subscription)
             .service(confirm)
             .service(publish_newsletter)
+            .service(admin_dashboard)
             .route("/", web::get().to(home))
             .route("/login", web::get().to(login_form))
             .route("/login", web::post().to(login))
