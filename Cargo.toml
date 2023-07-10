@@ -28,6 +28,11 @@ thiserror = "1.0.38"
 anyhow = "1.0.70"
 base64 = "0.21.2"
 argon2 = { version = "0.4.0", features = ["std"] }
+urlencoding = "2.1.2"
+actix-session = { version = "0.7.2", features = ["redis-rs-tls-session"] }
+actix-web-flash-messages = { version = "0.4", features = ["cookies"] }
+hmac = { version = "0.12", features = ["std"] }
+sha2 = "0.10"
 
 [dependencies.reqwest]
 version = "0.11.14"

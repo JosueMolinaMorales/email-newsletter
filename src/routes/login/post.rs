@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use actix_web::{web, HttpResponse, ResponseError};
-use reqwest::header::LOCATION;
+use reqwest::{header::LOCATION, StatusCode};
 use secrecy::Secret;
 use sqlx::PgPool;
 
@@ -53,6 +53,13 @@ impl Debug for LoginError {
 }
 
 impl ResponseError for LoginError {
+    fn error_response(&self) -> HttpResponse {
+        let binding = self.to_string();
+        let encoded_error = urlencoding::encode(&binding);
+        HttpResponse::build(StatusCode::SEE_OTHER)
+            .insert_header((LOCATION, format!("/login?error={}", encoded_error)))
+            .finish()
+    }
     fn status_code(&self) -> reqwest::StatusCode {
         match self {
             LoginError::AuthError(_) => reqwest::StatusCode::UNAUTHORIZED,

@@ -1,5 +1,6 @@
 application:
   port: 8000
+  hmac_secret: "4e7e690db2fd4d193373a085eb1856024181e480f8b54b1397373f165fb10fd8"
 database:
   host: "localhost"
   port: 5432
@@ -11,3 +12,4 @@ email_client:
   sender_email: "josue.morales@secured.team"
   authorization_token: "16a9c896-23ab-4ff3-a502-f0ad28d711d6"
   timeout_milliseconds: 10000
+redis_uri: "redis://127.0.0.1:6379"
